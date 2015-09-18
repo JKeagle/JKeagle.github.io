@@ -1,0 +1,64 @@
+# Site settings
+
+url: "http://JKeagle.github.io"
+title: "{ JKeagle }"
+description: "Blog and website of JKeagle, blogging mainly for tech and life. Opinions expressed are mine."
+keywords: "JKeagle, technology, computer science, Backend, C++, Python, shell, lua"
+favicon: "/img/favicon.ico"
+black-favicon: "/img/black-lab-glass.ico"
+google-tracking-id: "UA-67830114-1"
+disqus-shortname: "jkeagle"
+
+# Navigation bar links
+# Blog link in the blog and post pages will point to the blog.html#blog
+# In the default page it will point to the preview of the last post
+
+pages_list:
+  About: 'about'
+  Blog: 'blog'
+  Career: 'career'
+  Contact: 'contact'
+
+#background-img: "/img/intro-bg.jpg"
+
+# About variables
+
+me-img: "/img/me.jpg"
+
+# Blog variables
+paginate: 15
+
+paginate_path: "blog/page:num"
+
+post-preview-words: 128
+
+fb-share: True
+twitter-share: True
+reddit-share: True
+
+# Career variables
+
+events:
+  - image: "/img/career/worker.jpg"
+    date: "5月 2014 - 至今"
+    description: "大四下学期开始在国内一家软件公司实习，毕业后留在公司工作至今"
+  - image: "/img/career/SCNU.jpg"
+    date: "9月 2010 - 7月 2014"
+    description: "在南中国一般吃饭大学，简称 <a href=\"http://www.scnu.edu.cn/scnu/\" target=\"_blank\">华师</a> 的南海校区就读电子信息工程专业，完成本科学业"
+
+# First image of the Career timeline
+career-img: "/img/career/default.jpg"
+
+# Social networks variables (many more available: facebook, flickr, dribbble, pinterest, instagram, tumblr etc.)
+social:
+  - title: "rss"
+    url: "/feed.xml"
+  - title: "github"
+    url: "https://github.com/JKeagle"
+  - title: "weibo"
+    url: "http://weibo.com/king00jia"
+
+404-img: "/img/labtocat.png"
+
+# Exclusion list from the generated _site
+exclude: ["Rakefile", "LICENSE", "readme.markdown", "vendor"]
