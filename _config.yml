@@ -8,7 +8,9 @@ favicon: "/img/favicon.ico"
 black-favicon: "/img/black-lab-glass.ico"
 google-tracking-id: "UA-67830114-1"
 disqus-shortname: "jkeagle"
-markdown:      kramdown
+markdown:      redcarpet
+redcarpet:
+        extensions: ["fenced_code_blocks", "tables", "highlight", "strikethrough"]
 highlighter: pygments
 
 # Navigation bar links
@@ -32,11 +34,12 @@ paginate: 15
 
 paginate_path: "blog/page:num"
 
-post-preview-words: 128
+post-preview-words: 28
 
 fb-share: True
 twitter-share: True
 reddit-share: True
+weibo-share: True
 
 # Career variables
 

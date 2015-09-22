@@ -1,0 +1,317 @@
+---
+layout: post
+section-type: post
+title: Lua,C++,linux平台下的交互
+category: tech
+tags: [ 'C++', 'Lua','Linux']
+---
+
+![lua](http://blog.acamara.es/wp-content/uploads/2012/08/lua-logo_128x128.png)
+####Lua是什么？
+#####lua是一门小巧精悍的脚本语言，易于嵌入c/c++中，除了广泛应用于游戏AI ，而且在任何经常变化的逻辑上都可以使用lua实现，配合c/c++实现的底层接口服务，能够大大降低系统的维护成本。
+####写这篇博客的初衷
+
+#####前段时间，在某个二开项目中，需要在系统模块中增加一个lua调用框架，以实现在程序之中直接调用lua脚本，这样，如果后期工作中的业务逻辑发生变化，只需要修改lua脚本中相应的接口即可。自己刚接手这个二开的时候还不知道lua是什么东西，只是偶尔在一些游戏公司的招聘信息看到这个名词。
+
+#####随后的几天，就是在网上找lua相关的资料，将lua加入自己的技能树中，期间也是个踩坑填坑的过程，现在就把这个二开中积累的一些经验放出来。
+
+#####lua跟C/C++的交互过程
+#####Lua和C/C++通信的主要方法是一个栈*lua_State*，可以把ta理解为一个运行lua脚本的虚拟机。几乎所有的API调用都会操作这个栈上的值；所有的数据交换，无论是Lua到C/C++或C/C++到Lua都通过这个栈来完成。栈可以解决Lua和C/C++之间存在的两大差异，第一种差异是Lua使用垃圾收集，而C/C++要求显式地释放内存；第二种是Lua使用动态类型，而C/C++使用静态类型。为了屏蔽C/C++和Lua之间的差异性，让彼此之间的交互变的通常，便出现了这个虚拟栈。栈中的每个元素都能保存任何类型的Lua值，当在C/C++代码中要获取Lua中的一个值时，只需调用一个Lua API函数，Lua就会将指定值压入栈中；要将一个值传给Lua时，需要先将这个值压入栈，然后调用Lua API，Lua就会获得该值并将其从栈中弹出。为了将C/C++类型的值压入栈，或者从栈中获取不同类型的值，就需要为每种类型定义一个特定的函数。
+
+#####操作数据时，首先将数据拷贝到"栈"上，然后获取数据，栈中的每个数据通过索引值进行定位，索引值为正时表示相对于栈底的偏移索引，索引值为负时表示相对于栈顶的偏移索引，索引值以1或-1为起始值，因此栈顶索引值永远为-1 ,栈底索引值永远为1 。 "栈"相当于数据在lua和c/c++之间的中转地。每种数据都有相应的存取接口 。
+
+####Lua提供的操作接口
+* 数据入"栈"接口:
+
+```c
+void  (lua_pushnil) (lua_State *L);
+void  (lua_pushnumber) (lua_State *L, lua_Number n);
+void  (lua_pushinteger) (lua_State *L, lua_Integer n);
+void  (lua_pushlstring) (lua_State *L, const char *s, size_t l);
+void  (lua_pushstring) (lua_State *L, const char *s);
+void  (lua_pushboolean) (lua_State *L, int b);
+void  (lua_pushcclosure) (lua_State *L, lua_CFunction fn, int n);
+```
+* 数据获取接口：
+
+```c
+lua_Number      (lua_tonumber) (lua_State *L, int idx);
+lua_Integer     (lua_tointeger) (lua_State *L, int idx);
+int             (lua_toboolean) (lua_State *L, int idx);
+const char     *(lua_tolstring) (lua_State *L, int idx, size_t *len);
+lua_CFunction   (lua_tocfunction) (lua_State *L, int idx);
+```
+* "栈"操作接口：
+
+```c
+int   (lua_gettop) (lua_State *L);
+void  (lua_settop) (lua_State *L, int idx);
+void  (lua_pushvalue) (lua_State *L, int idx);
+void  (lua_remove) (lua_State *L, int idx);
+void  (lua_insert) (lua_State *L, int idx);
+void  (lua_replace) (lua_State *L, int idx);
+int   (lua_checkstack) (lua_State *L, int sz);
+```
+* lua中定义的变量和函数存放在一个全局table中，table相关操作接口：
+
+```c
+void  (lua_gettable) (lua_State *L, int idx);
+void  (lua_getfield) (lua_State *L, int idx, const char *k);
+void  (lua_settable) (lua_State *L, int idx);
+void  (lua_setfield) (lua_State *L, int idx, const char *k);
+```
+* 当"栈"中包含执行脚本需要的所有要素(函数名和参数)后，调用lua_pcall执行脚本（这是一个比较重要的函数，后面会单独说）：
+
+```c
+int   (lua_pcall) (lua_State *L, int nargs, int nresults, int errfunc);
+```
+#####介绍了那么多接口，现在写一个简单的demo来说明一下如何使用，下面提供一个C++中调用lua的示例,C++代码中有详细的注释，后面就只分析结果不再赘述
+
+* demo.lua:
+
+```lua
+function ArgsSplice(...)
+    local num=0;
+    local all = "";
+    for i,value in pairs{...} do
+            all = all .." " .. tostring(value);
+        num=i;
+    end
+    return num,all
+end
+
+function Sum(...)
+  local s=0
+  local num=0
+  for k,v in pairs{...} do
+    s = s + v
+       num = k
+  end
+  return s,s/num
+end
+```
+
+* C++的调用lua的demo，文件名*testLua.cpp*
+
+```c
+#include<iostream>
+//the lua head file
+
+extern "C"{
+#include<lua.h>
+#include<lualib.h>
+#include<lauxlib.h>
+}
+
+//dump the data of stack
+void StackDump(lua_State* pLuaEnv)
+{
+     if(NULL == pLuaEnv)
+         return;
+     int nTop = lua_gettop(pLuaEnv);
+     for(int i = 1; i <= nTop; ++i)
+     {
+          //repeat for each level
+          int nType = lua_type(pLuaEnv, i);
+          switch(nType)
+          {
+              case LUA_TSTRING:
+                  std::cout<<lua_tostring(pLuaEnv, i)<<"\t";
+                  break;
+              case LUA_TBOOLEAN:
+                  {
+                      std::string str = (1 == lua_toboolean(pLuaEnv, i)) ? "true" : "false";
+                      std::cout<<str<<"\t";
+                      break;
+                  }
+              case LUA_TNUMBER:
+                  std::cout<<lua_tonumber(pLuaEnv, i)<<"\t";
+                  break;
+              default:
+                  std::cout<<lua_typename(pLuaEnv, nType)<<"\t";
+                  break;
+          }
+     }
+     std::cout<<std::endl;
+}
+
+int main(int argc, char* argv[])
+{
+     //create the lua env
+
+     lua_State *pLuaEnv = luaL_newstate();
+
+     //void luaL_openlibs (lua_State *L);
+     //lua_State//Opens all standard Lua libraries into the given state.
+     //luaL_openlibs(pLuaEnv);
+
+     luaopen_base(pLuaEnv); /* opens the basic library */
+     luaopen_table(pLuaEnv); /* opens the table library */
+     luaopen_io(pLuaEnv); /* opens the I/O library */
+     luaopen_string(pLuaEnv); /* opens the string lib. */
+     luaopen_math(pLuaEnv); /* opens the math lib. */
+     std::cout<<"dump the stack after load the libraries"<<std::endl;
+     StackDump(pLuaEnv);
+
+     if(NULL == pLuaEnv)
+     {
+         std::cout<<"luaL_newstate() failed"<<std::endl;
+         return -1;
+     }
+
+     int nRet = 0;
+     //You only have to provide the Lua state in which you want the script running and the filename — with full path if it is not in the same directory of your C++ executable — of the Lua script.
+     nRet = luaL_loadfile(pLuaEnv, "demo.lua");
+
+     if(0 != nRet)
+     {
+         std::cout<<"luaL_loadfile failed"<<std::endl;
+         return -1;
+     }
+
+     std::cout<<"dump the stack after load the script file"<<std::endl;
+     StackDump(pLuaEnv);
+
+     //Lua handles a chunk as the body of an anonymous function with a variable number of arguments
+     nRet = lua_pcall(pLuaEnv, 0, 0, 0);
+     if(0 != nRet)
+     {
+         std::cout<<"lua_call failed: "<<lua_tostring(pLuaEnv, -1)<<"\t"<<__LINE__<<std::endl;
+         return -1;
+     }
+
+     std::cout<<"dump the stack after call an anonymous function"<<std::endl;
+     StackDump(pLuaEnv);
+
+     int nTop = lua_gettop(pLuaEnv);
+
+     //set the call func to the stack top
+     lua_getglobal(pLuaEnv, "ArgsSplice");
+
+
+
+     lua_pushboolean (pLuaEnv,1);
+     lua_pushnumber (pLuaEnv, 0.12);
+     lua_pushstring (pLuaEnv, "string");
+     std::cout<<"dump the stack before call ArgsSplice"<<std::endl;
+     StackDump(pLuaEnv);
+
+     //call the ArgsSplice func
+     nRet = lua_pcall(pLuaEnv,3,2,0) ;
+
+     if(0 != nRet)
+     {
+         std::cout<<"lua_pcall failed: "<<lua_tostring(pLuaEnv, -1)<<"\t"<<__LINE__<<std::endl;
+         return -1;
+     }
+
+     std::string strRet1, strRet2;
+
+     //the interface to get the value of the stack
+
+     if(lua_isstring(pLuaEnv, -2))
+     {
+          strRet1 = lua_tostring(pLuaEnv,-2);
+     }
+     if(lua_isstring(pLuaEnv, -1))
+     {
+          strRet2 = lua_tostring(pLuaEnv, -1);
+     }
+
+     std::cout<<"ArgsSplice return "<<strRet1<<","<<strRet2<<std::endl;
+    //clear the return data in the stack
+    //lua_pop(pLuaEnv, 2);
+
+     lua_getglobal(pLuaEnv,"Sum");
+
+     lua_pushnumber (pLuaEnv, 10);
+     lua_pushnumber (pLuaEnv, 17);
+     lua_pushnumber (pLuaEnv, 15);
+     lua_pushnumber (pLuaEnv, 13);
+     std::cout<<"dump the stack before call Sum"<<std::endl;
+
+     StackDump(pLuaEnv);
+
+     nRet = lua_pcall(pLuaEnv,4,2,0) ;
+
+     if(0 != nRet)
+     {
+         std::cout<<"lua_pcall failed: "<<lua_tostring(pLuaEnv, -1)<<"\t"<<__LINE__<<std::endl;
+         return -1;
+     }
+     float fResult1, fResult2;
+     if(lua_isnumber(pLuaEnv, -2))
+     {
+         fResult1 = lua_tonumber(pLuaEnv, -2);
+     }
+     if(lua_isnumber(pLuaEnv, -1))
+     {
+          fResult2 = lua_tonumber(pLuaEnv, -1);
+     }
+     std::cout<<"sum return "<<fResult1<<","<<fResult2<<std::endl;
+    //restore the lua env
+     lua_settop(pLuaEnv, nTop);
+
+     std::cout<<"after restore the lua env"<<std::endl;
+
+     StackDump(pLuaEnv);
+
+
+     //release the lua env
+     lua_close(pLuaEnv);
+     return 0;
+}
+```
+
+####编译运行
+
+* 编译指令：
+
+```bash
+g++ testLua.cpp -o testLua -llua
+```
+* 运行结果：
+
+```bash
+[root@localhost Clua]# ./testLua 
+dump the stack after load the libraries
+table   table   table   table   table
+dump the stack after load the script file
+table   table   table   table   table   function
+dump the stack after call an anonymous function
+table   table   table   table   table
+dump the stack before call ArgsSplice
+table   table   table   table   table   function        true    0.12    string
+ArgsSplice return 3, true 0.12 string
+dump the stack before call Sum
+table   table   table   table   table   3        true 0.12 string       function        10      17      15      13
+sum return 55,13.75
+after restore the lua env
+table   table   table   table   table
+```
+
+* 分析输出，可以看到打印的是调用lua脚本过程中栈中数据的变化
+    * 第二行，5个table表示我们加载lua的5个library
+    * 第四行，可以看到，加载我们定义的脚本后，栈中多了function类型，这里需要说一下*nRet = lua_pcall(pLuaEnv, 0, 0, 0);*这个调用，luaL_loadfile执行以后，并不可以直接调用lua_getglobal获得LuaTest.lua中的函数，因为lua_loadfile把一个lua文件当作一个chunk编译后放到stack的栈顶，而什么是chunk呢？chunk就是一个可执行语句的组合，可以是一个文件也可以是一个string，而调用前面的注释（这是从官方文档copy过来的）也说明了Lua对chunk也就是lua文件的处理方式，就是认为ta是一个可变参数的匿名函数。也就是说，调用后栈上有一个匿名函数，这个函数的body就是文件中所有的内容。luaL_loadfile仅仅是编译lua文件，并不执行这个文件，也就是说只是在栈上形成了一个匿名函数。只有执行这个函数一次，才会使得脚本中的函数可以通过lua_getglobal获取，否则，全局变量中找不到你调用的函数名，会得到一个* attempt to call a nil value*的错误。
+    * 第六行，调用匿名函数后由于没有任何返回，而脚本中的变量都进入全局变量，现在栈中只有之前的5个table
+    * 第八行，可以看到lua_getglobal将function提到栈中，它前面就是我们压入栈中的数据
+    * 第十一行，函数调用结束之后，由于没有清掉返回的数据，所以两个返回值依旧留在栈中，而function回到全局变量，并没有在栈中驻留，这里需要提醒一下，就是我们调用lua函数之后应该使用lua_pop将ta的返回值从栈中移除，这里只是为了分析栈中的数据所以省略了。
+    * 后面的输出以此类推，就不再赘述了
+
+####最后的一点总结
+
+* 这个示例只是单线的例子，如果在多线程的环境中，应该确保一个线程一个lua_State,因为Lua中的函数都没有提供线程安全实现。所以如果在多线程中访问lua_State 会产生无法预料的结果。所幸的是lua 提供了多线程支持函数，可以用来解决多线程的问题。这五个函数原型分别如下：
+
+```
+int lua_newthred(lua_State* L)
+int lua_resume(lua_State* L, int nargs)
+int lua_yield(lua_State* L int nresults)
+void lua_lock(lua_State* L)
+void lua_unlock(lua_State* L)
+```
+* 我们借助以上五个函数，再加上线程同步。基本上能解决Lua在多线程中的应用问题。以上五个函数的具体用法请参考lua开发指南。
+
+####主要的参考资料：
+
+* [lua开发指南](http://www.lua.org/manual/5.2/)
+* [Pistachio Brainstorming](http://acamara.es/blog/2012/08/running-a-lua-5-2-script-from-c/) 
