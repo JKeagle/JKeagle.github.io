@@ -1,5 +1,5 @@
 <!-- Blog Section -->
-<section id="{{ page.title }}" class="container content-section text-center">
+<section id="{{ page.title }}" class="container content-section text-left">
     <div class="row">
       <div class="col-lg-8 col-lg-offset-2">
 
@@ -12,7 +12,7 @@
           <small> <a href="{{ post.url }}#disqus_thread">Comments</a></small>
         </h4>
 
-        {{ post.content | truncatewords: site.post-preview-words | strip_html | markdownify }}
+        {{ post.content | slice: site.post-preview-words | markdownify }}
 
         <a href="/blog/index.html"><h4><strong>View more posts</strong></h4></a>
 
